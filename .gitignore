@@ -1,0 +1,46 @@
+# === Protected model weights (backed up separately, privately, via Git LFS) ===
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
+
+# === Protected test videos (backed up separately, privately, via Git LFS) ===
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# === Protected asset directories (belt-and-suspenders alongside the extension rules above) ===
+# Scoped to the leaf dirs that hold binaries, not the whole tree, so
+# backend/models/README.md and test_videos/README.md stay tracked.
+backend/models/i3d/
+backend/models/stage1_binary/
+backend/models/stage2_action/
+test_videos/*/
+data/
+
+# === Secrets ===
+.env
+.env.*
+!.env.example
+
+# === Python ===
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# === Node / frontend (added later) ===
+node_modules/
+
+# === Logs ===
+*.log
+
+# === OS / editor cruft ===
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
