@@ -1,0 +1,88 @@
+======================================================================
+TEMPORAL LOCALIZATION PROBE (read-only diagnostic)
+======================================================================
+Video: D:\SENTINEL-X\test_videos\Abuse\Abuse021_x264.mp4
+Backend dir (sys.path): D:\SENTINEL-X\backend
+final_demo_inference module file: D:\SENTINEL-X\backend\app\inference\final_demo_inference.py
+FPS_SAMPLE=4  WINDOW_FRAMES=32  DEFAULT_THRESHOLD=0.5
+ACTION_CLASSES=['Abuse', 'Arrest', 'Arson', 'Assault', 'Burglary', 'Explosion', 'Fighting', 'RoadAccidents', 'Robbery', 'Shooting', 'Shoplifting', 'Stealing', 'Vandalism']
+
+Loaded I3D + Stage1 + Stage2 checkpoints in 0.68s on device=cuda
+Stage1 threshold in use: 0.5
+
+----------------------------------------------------------------------
+BASELINE: full whole-video InferencePipeline.analyze() (production path)
+----------------------------------------------------------------------
+Result: ANOMALY
+Anomaly probability: 97.81%
+Likely action: Abuse
+Action confidence: 57.21%
+Top-3 action candidates:
+  1. Abuse          57.21%
+  2. Assault        12.35%
+  3. Fighting       8.84%
+Sampled frames: 240
+Temporal windows (N): 32
+I3D feature shape: (32, 1024, 3)
+Attention sum (sanity check, should be ~1.0): 1.000000
+Elapsed: 7.33s
+
+----------------------------------------------------------------------
+Recomputing sampled frames / window_starts / I3D features (same production functions, standalone call, for slicing)
+----------------------------------------------------------------------
+native_fps=30.0000  total_native_frames=1913  n_sampled_frames=240
+n_windows=32  window_starts[:5]=[0, 7, 13, 20, 27] ... window_starts[-5:]=[181, 188, 195, 201, 208]
+i3d_features.shape=(32, 1024, 3)
+Standalone recompute matches baseline analyze() exactly (n_windows, feature_shape).
+
+Approx. video duration from sampled frames: 60.00s (= n_sampled_frames / FPS_SAMPLE, itself approximate)
+
+----------------------------------------------------------------------
+SLIDING SUBSEQUENCE EXPERIMENT  (stride mode: non-overlapping (stride = L))
+----------------------------------------------------------------------
+
+L=4  stride=4  n_subsequences=8  skipped_trailing=0
+ start_s    end_s  stage1_p     pred_class    conf
+    0.00    13.00    0.4392          Abuse  0.4441
+    6.75    19.75    0.6414          Abuse  0.5137
+   13.50    26.50    0.2536          Abuse  0.5426
+   20.25    33.25    0.4048          Abuse  0.4048
+   26.75    39.75    0.9961        Assault  0.2203
+   33.50    46.50    0.9978        Assault  0.2570
+   40.25    53.25    0.2369          Abuse  0.2295
+   47.00    60.00    0.0430          Abuse  0.2125
+  Stage1 prob: min=0.0430 max=0.9978 mean=0.5016 std=0.3289
+  Stage2 unique predicted classes: ['Abuse', 'Assault']
+  Stage2 confidence: min=0.2125 max=0.5426 mean=0.3531 std=0.1297
+
+L=8  stride=8  n_subsequences=4  skipped_trailing=0
+ start_s    end_s  stage1_p     pred_class    conf
+    0.00    19.75    0.5619          Abuse  0.5222
+   13.50    33.25    0.3389          Abuse  0.5603
+   26.75    46.50    0.9975        Assault  0.2650
+   40.25    60.00    0.1080          Abuse  0.2787
+  Stage1 prob: min=0.1080 max=0.9975 mean=0.5016 std=0.3282
+  Stage2 unique predicted classes: ['Abuse', 'Assault']
+  Stage2 confidence: min=0.2650 max=0.5603 mean=0.4065 std=0.1355
+
+L=16  stride=16  n_subsequences=2  skipped_trailing=0
+ start_s    end_s  stage1_p     pred_class    conf
+    0.00    33.25    0.4646          Abuse  0.5918
+   26.75    60.00    0.9936          Abuse  0.2715
+  Stage1 prob: min=0.4646 max=0.9936 mean=0.7291 std=0.2645
+  Stage2 unique predicted classes: ['Abuse']
+  Stage2 confidence: min=0.2715 max=0.5918 mean=0.4316 std=0.1601
+
+L=32  stride=32  n_subsequences=1  skipped_trailing=0
+ start_s    end_s  stage1_p     pred_class    conf
+    0.00    60.00    0.9781          Abuse  0.5721
+  Stage1 prob: min=0.9781 max=0.9781 mean=0.9781 std=0.0000
+  Stage2 unique predicted classes: ['Abuse']
+  Stage2 confidence: min=0.5721 max=0.5721 mean=0.5721 std=0.0000
+
+======================================================================
+DONE
+======================================================================
+
+Wrote D:\SENTINEL-X\diagnostics\temporal_experiment\results.json
+Wrote D:\SENTINEL-X\diagnostics\temporal_experiment\results.md

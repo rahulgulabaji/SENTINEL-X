@@ -1,0 +1,510 @@
+{
+  "video_path": "D:\\SENTINEL-X\\test_videos\\Abuse\\Abuse021_x264.mp4",
+  "device": "cuda",
+  "stage1_threshold": 0.5,
+  "fps_sample": 4,
+  "window_frames": 32,
+  "n_sampled_frames": 240,
+  "native_fps": 30.0,
+  "total_native_frames": 1913,
+  "n_windows_total": 32,
+  "video_duration_approx_sec": 60.0,
+  "timestamp_note": "approx_start_sec / approx_end_sec are APPROXIMATIONS: window_starts are indices into the sampled-frame sequence (sampled at FPS_SAMPLE), not native-video frame indices, and native_fps may not divide evenly by FPS_SAMPLE. Treat these as rough timing only.",
+  "stride_mode": "non-overlapping (stride = L)",
+  "subsequence_lengths_tested": [
+    4,
+    8,
+    16,
+    32
+  ],
+  "baseline_whole_video": {
+    "video": "D:\\SENTINEL-X\\test_videos\\Abuse\\Abuse021_x264.mp4",
+    "anomaly_probability": 0.9780656695365906,
+    "is_anomaly": true,
+    "likely_action": "Abuse",
+    "action_confidence": 0.5720658898353577,
+    "action_candidates": [
+      [
+        "Abuse",
+        0.5720658898353577
+      ],
+      [
+        "Assault",
+        0.12348904460668564
+      ],
+      [
+        "Fighting",
+        0.08843167871236801
+      ],
+      [
+        "Vandalism",
+        0.07715380191802979
+      ],
+      [
+        "Burglary",
+        0.03481132164597511
+      ],
+      [
+        "Arrest",
+        0.02399905025959015
+      ],
+      [
+        "Robbery",
+        0.020256282761693
+      ],
+      [
+        "Stealing",
+        0.01797836646437645
+      ],
+      [
+        "Shooting",
+        0.01693660579621792
+      ],
+      [
+        "Shoplifting",
+        0.016319788992404938
+      ],
+      [
+        "RoadAccidents",
+        0.004837831947952509
+      ],
+      [
+        "Arson",
+        0.0026630235370248556
+      ],
+      [
+        "Explosion",
+        0.0010573973413556814
+      ]
+    ],
+    "n_sampled_frames": 240,
+    "n_windows": 32,
+    "feature_shape": [
+      32,
+      1024,
+      3
+    ],
+    "attention_sum": 1.0,
+    "elapsed_seconds": 7.333717107772827
+  },
+  "subsequence_experiment": {
+    "4": {
+      "stride": 4,
+      "n_subsequences": 8,
+      "n_skipped_trailing": 0,
+      "subsequences": [
+        {
+          "window_index_range": [
+            0,
+            3
+          ],
+          "approx_start_sec": 0.0,
+          "approx_end_sec": 13.0,
+          "approx_duration_sec": 13.0,
+          "fraction_of_video": 0.2167,
+          "stage1_anomaly_probability": 0.4391751289367676,
+          "stage2_predicted_class": "Abuse",
+          "stage2_top3": [
+            [
+              "Abuse",
+              0.4440932869911194
+            ],
+            [
+              "Assault",
+              0.13206888735294342
+            ],
+            [
+              "Fighting",
+              0.11587541550397873
+            ]
+          ]
+        },
+        {
+          "window_index_range": [
+            4,
+            7
+          ],
+          "approx_start_sec": 6.75,
+          "approx_end_sec": 19.75,
+          "approx_duration_sec": 13.0,
+          "fraction_of_video": 0.2167,
+          "stage1_anomaly_probability": 0.6413984298706055,
+          "stage2_predicted_class": "Abuse",
+          "stage2_top3": [
+            [
+              "Abuse",
+              0.5137246251106262
+            ],
+            [
+              "Assault",
+              0.13165900111198425
+            ],
+            [
+              "Fighting",
+              0.0925862267613411
+            ]
+          ]
+        },
+        {
+          "window_index_range": [
+            8,
+            11
+          ],
+          "approx_start_sec": 13.5,
+          "approx_end_sec": 26.5,
+          "approx_duration_sec": 13.0,
+          "fraction_of_video": 0.2167,
+          "stage1_anomaly_probability": 0.25358885526657104,
+          "stage2_predicted_class": "Abuse",
+          "stage2_top3": [
+            [
+              "Abuse",
+              0.5426470041275024
+            ],
+            [
+              "Assault",
+              0.11910722404718399
+            ],
+            [
+              "Fighting",
+              0.09569619596004486
+            ]
+          ]
+        },
+        {
+          "window_index_range": [
+            12,
+            15
+          ],
+          "approx_start_sec": 20.25,
+          "approx_end_sec": 33.25,
+          "approx_duration_sec": 13.0,
+          "fraction_of_video": 0.2167,
+          "stage1_anomaly_probability": 0.40478765964508057,
+          "stage2_predicted_class": "Abuse",
+          "stage2_top3": [
+            [
+              "Abuse",
+              0.40483590960502625
+            ],
+            [
+              "Assault",
+              0.1617426574230194
+            ],
+            [
+              "Vandalism",
+              0.10150516033172607
+            ]
+          ]
+        },
+        {
+          "window_index_range": [
+            16,
+            19
+          ],
+          "approx_start_sec": 26.75,
+          "approx_end_sec": 39.75,
+          "approx_duration_sec": 13.0,
+          "fraction_of_video": 0.2167,
+          "stage1_anomaly_probability": 0.9961274266242981,
+          "stage2_predicted_class": "Assault",
+          "stage2_top3": [
+            [
+              "Assault",
+              0.22030943632125854
+            ],
+            [
+              "Vandalism",
+              0.13974088430404663
+            ],
+            [
+              "Abuse",
+              0.12494039535522461
+            ]
+          ]
+        },
+        {
+          "window_index_range": [
+            20,
+            23
+          ],
+          "approx_start_sec": 33.5,
+          "approx_end_sec": 46.5,
+          "approx_duration_sec": 13.0,
+          "fraction_of_video": 0.2167,
+          "stage1_anomaly_probability": 0.9978302121162415,
+          "stage2_predicted_class": "Assault",
+          "stage2_top3": [
+            [
+              "Assault",
+              0.257022887468338
+            ],
+            [
+              "Abuse",
+              0.21128518879413605
+            ],
+            [
+              "Fighting",
+              0.11444021016359329
+            ]
+          ]
+        },
+        {
+          "window_index_range": [
+            24,
+            27
+          ],
+          "approx_start_sec": 40.25,
+          "approx_end_sec": 53.25,
+          "approx_duration_sec": 13.0,
+          "fraction_of_video": 0.2167,
+          "stage1_anomaly_probability": 0.23689553141593933,
+          "stage2_predicted_class": "Abuse",
+          "stage2_top3": [
+            [
+              "Abuse",
+              0.2294987291097641
+            ],
+            [
+              "Assault",
+              0.2160961627960205
+            ],
+            [
+              "Vandalism",
+              0.10286732017993927
+            ]
+          ]
+        },
+        {
+          "window_index_range": [
+            28,
+            31
+          ],
+          "approx_start_sec": 47.0,
+          "approx_end_sec": 60.0,
+          "approx_duration_sec": 13.0,
+          "fraction_of_video": 0.2167,
+          "stage1_anomaly_probability": 0.04304210841655731,
+          "stage2_predicted_class": "Abuse",
+          "stage2_top3": [
+            [
+              "Abuse",
+              0.2125380039215088
+            ],
+            [
+              "Assault",
+              0.16697938740253448
+            ],
+            [
+              "Fighting",
+              0.1118462085723877
+            ]
+          ]
+        }
+      ]
+    },
+    "8": {
+      "stride": 8,
+      "n_subsequences": 4,
+      "n_skipped_trailing": 0,
+      "subsequences": [
+        {
+          "window_index_range": [
+            0,
+            7
+          ],
+          "approx_start_sec": 0.0,
+          "approx_end_sec": 19.75,
+          "approx_duration_sec": 19.75,
+          "fraction_of_video": 0.3292,
+          "stage1_anomaly_probability": 0.5618516802787781,
+          "stage2_predicted_class": "Abuse",
+          "stage2_top3": [
+            [
+              "Abuse",
+              0.5221701860427856
+            ],
+            [
+              "Assault",
+              0.1277446299791336
+            ],
+            [
+              "Fighting",
+              0.09951804578304291
+            ]
+          ]
+        },
+        {
+          "window_index_range": [
+            8,
+            15
+          ],
+          "approx_start_sec": 13.5,
+          "approx_end_sec": 33.25,
+          "approx_duration_sec": 19.75,
+          "fraction_of_video": 0.3292,
+          "stage1_anomaly_probability": 0.33889615535736084,
+          "stage2_predicted_class": "Abuse",
+          "stage2_top3": [
+            [
+              "Abuse",
+              0.5603487491607666
+            ],
+            [
+              "Assault",
+              0.12140358984470367
+            ],
+            [
+              "Fighting",
+              0.09226957708597183
+            ]
+          ]
+        },
+        {
+          "window_index_range": [
+            16,
+            23
+          ],
+          "approx_start_sec": 26.75,
+          "approx_end_sec": 46.5,
+          "approx_duration_sec": 19.75,
+          "fraction_of_video": 0.3292,
+          "stage1_anomaly_probability": 0.9974568486213684,
+          "stage2_predicted_class": "Assault",
+          "stage2_top3": [
+            [
+              "Assault",
+              0.2649669647216797
+            ],
+            [
+              "Abuse",
+              0.1907355785369873
+            ],
+            [
+              "Vandalism",
+              0.12237586826086044
+            ]
+          ]
+        },
+        {
+          "window_index_range": [
+            24,
+            31
+          ],
+          "approx_start_sec": 40.25,
+          "approx_end_sec": 60.0,
+          "approx_duration_sec": 19.75,
+          "fraction_of_video": 0.3292,
+          "stage1_anomaly_probability": 0.1079987958073616,
+          "stage2_predicted_class": "Abuse",
+          "stage2_top3": [
+            [
+              "Abuse",
+              0.2786872684955597
+            ],
+            [
+              "Assault",
+              0.20300224423408508
+            ],
+            [
+              "Fighting",
+              0.0985458716750145
+            ]
+          ]
+        }
+      ]
+    },
+    "16": {
+      "stride": 16,
+      "n_subsequences": 2,
+      "n_skipped_trailing": 0,
+      "subsequences": [
+        {
+          "window_index_range": [
+            0,
+            15
+          ],
+          "approx_start_sec": 0.0,
+          "approx_end_sec": 33.25,
+          "approx_duration_sec": 33.25,
+          "fraction_of_video": 0.5542,
+          "stage1_anomaly_probability": 0.46457794308662415,
+          "stage2_predicted_class": "Abuse",
+          "stage2_top3": [
+            [
+              "Abuse",
+              0.5917685627937317
+            ],
+            [
+              "Assault",
+              0.11616842448711395
+            ],
+            [
+              "Fighting",
+              0.08722338080406189
+            ]
+          ]
+        },
+        {
+          "window_index_range": [
+            16,
+            31
+          ],
+          "approx_start_sec": 26.75,
+          "approx_end_sec": 60.0,
+          "approx_duration_sec": 33.25,
+          "fraction_of_video": 0.5542,
+          "stage1_anomaly_probability": 0.9936330318450928,
+          "stage2_predicted_class": "Abuse",
+          "stage2_top3": [
+            [
+              "Abuse",
+              0.2714758515357971
+            ],
+            [
+              "Assault",
+              0.23701058328151703
+            ],
+            [
+              "Vandalism",
+              0.10797258466482162
+            ]
+          ]
+        }
+      ]
+    },
+    "32": {
+      "stride": 32,
+      "n_subsequences": 1,
+      "n_skipped_trailing": 0,
+      "subsequences": [
+        {
+          "window_index_range": [
+            0,
+            31
+          ],
+          "approx_start_sec": 0.0,
+          "approx_end_sec": 60.0,
+          "approx_duration_sec": 60.0,
+          "fraction_of_video": 1.0,
+          "stage1_anomaly_probability": 0.9780656695365906,
+          "stage2_predicted_class": "Abuse",
+          "stage2_top3": [
+            [
+              "Abuse",
+              0.5720658898353577
+            ],
+            [
+              "Assault",
+              0.12348904460668564
+            ],
+            [
+              "Fighting",
+              0.08843167871236801
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

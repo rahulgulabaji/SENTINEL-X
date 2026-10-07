@@ -1,3 +1,27 @@
-torch==2.9.1
-numpy==2.1.3
-opencv-python==4.10.0.84
+# Core ML stack. torch/torchvision/torchaudio are CUDA builds (cu128) --
+# install with:
+#   pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 torchaudio==2.10.0+cu128 \
+#       --index-url https://download.pytorch.org/whl/cu128
+# before installing the rest of this file (pip does not otherwise know to
+# use the PyTorch CUDA wheel index, and a plain `pip install torch` from
+# this file would silently resolve to a CPU-only build from PyPI).
+# Versions pinned to what was actually verified working end-to-end in
+# D:\SENTINEL-X\backend\.venv on 2026-10-06 (I3D + Stage1 + Stage2 + YOLO26-S,
+# both on CUDA) -- not the original, now-stale pins.
+torch==2.10.0+cu128
+torchvision==0.25.0+cu128
+torchaudio==2.10.0+cu128
+numpy==2.2.6
+opencv-python==4.12.0.88
+
+# API layer (FastAPI backend). Versions verified working in the dedicated
+# SENTINEL-X venv, 2026-10-06.
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+python-multipart==0.0.32
+pydantic==2.13.4
+
+# YOLO26 supporting vision layer (object detection/tracking, additive to the
+# anomaly pipeline above). Pinned to the version actually installed and
+# verified in this environment -- not a blind add.
+ultralytics==8.4.137

@@ -25,6 +25,14 @@ data/
 .env.*
 !.env.example
 
+# === Runtime storage (uploaded videos, job results, evidence crops) ===
+backend/storage/uploads/*
+backend/storage/results/*
+backend/storage/evidence/*
+!backend/storage/uploads/.gitkeep
+!backend/storage/results/.gitkeep
+!backend/storage/evidence/.gitkeep
+
 # === Python ===
 __pycache__/
 *.pyc
