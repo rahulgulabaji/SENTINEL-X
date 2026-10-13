@@ -46,13 +46,13 @@ def test_plain_message_passes_through_with_exception_type_prefix(monkeypatch):
 
 
 def test_configured_mongodb_uri_is_redacted_even_without_uri_shape(monkeypatch):
-    secret_uri = "mongodb+srv://realuser:realpass123@cluster0.abcde.mongodb.net/sentinel_x"
+    secret_uri = "mongodb+srv://FAKE_TEST_USER:FAKE_TEST_PASS@FAKE-TEST-CLUSTER.example.net/sentinel_x"
     _patch_secrets(monkeypatch, mongodb_uri=secret_uri)
     exc = ConnectionError(f"Could not connect to {secret_uri}: timeout")
     result = sanitize_error_message(exc)
     assert secret_uri not in result
-    assert "realuser" not in result
-    assert "realpass123" not in result
+    assert "FAKE_TEST_USER" not in result
+    assert "FAKE_TEST_PASS" not in result
     # Diagnostic context (the exception type, and that it was a connection
     # failure) must survive the redaction, not just the secret disappearing.
     assert "ConnectionError" in result
