@@ -461,6 +461,142 @@ def build_temporal_evidence(window_starts, stage1_attn, stage2_attn):
     }
 
 
+def build_model_window_diagnostics(
+    window_starts,
+    stage1_attn,
+    anomaly_probability,
+    is_anomaly,
+    threshold,
+    stage2_attn,
+    likely_action,
+    action_confidence,
+):
+    """DIAGNOSTIC-ONLY, read-only view over values the pipeline already
+    computed -- no new timestamp formula, no recomputation of any model
+    output, no change to is_anomaly/threshold/action semantics.
+
+    IMPORTANT (per-window honesty note): final_binary_detector_v1 and
+    action_classifier_v2 are both whole-video MIL classifiers. Neither model
+    produces a genuine *per-window* anomaly probability or a genuine
+    *per-window* predicted action -- there is only ONE anomaly_probability
+    and (when stage2 runs) ONE likely_action/action_confidence for the
+    entire video. Those single whole-video values are repeated on every
+    window entry below so each row is self-contained for debugging, but
+    they are NOT independent per-window decisions. The only genuinely
+    per-window signal the models produce is attention (stage1_attention /
+    stage2_attention) -- i.e. how much each window's embedding contributed
+    to that one whole-video result. `stage1_anomaly` reuses the existing
+    whole-video is_anomaly flag (same threshold comparison already made in
+    analyze()) rather than inventing a new per-window threshold rule.
+    """
+    window_duration_seconds = WINDOW_FRAMES / FPS_SAMPLE
+    diagnostics = []
+
+    for i, start_idx in enumerate(window_starts):
+        start_time_seconds = float(start_idx) / FPS_SAMPLE
+        end_time_seconds = float(start_idx + WINDOW_FRAMES) / FPS_SAMPLE
+
+        stage2_ran = stage2_attn is not None
+        entry = {
+            "window_index": i,
+            "start_time_seconds": start_time_seconds,
+            "end_time_seconds": end_time_seconds,
+
+            # Whole-video values (existing, unmodified) -- repeated per row.
+            "stage1_anomaly_probability": float(anomaly_probability),
+            "stage1_anomaly": bool(is_anomaly),
+            "stage1_attention": float(stage1_attn[i]) if stage1_attn is not None else None,
+
+            "stage2_ran": stage2_ran,
+            "stage2_predicted_action": likely_action if stage2_ran else None,
+            "stage2_confidence": float(action_confidence) if (stage2_ran and action_confidence is not None) else None,
+            "stage2_attention": float(stage2_attn[i]) if stage2_ran else None,
+        }
+        s1 = entry["stage1_attention"] or 0.0
+        s2 = entry["stage2_attention"] or 0.0
+        entry["combined_attention"] = float(s1 + s2)
+        diagnostics.append(entry)
+
+    stage1_anomalous_windows = [
+        {
+            "window_index": e["window_index"],
+            "start_time_seconds": e["start_time_seconds"],
+            "end_time_seconds": e["end_time_seconds"],
+            "anomaly_probability": e["stage1_anomaly_probability"],
+            "attention": e["stage1_attention"],
+        }
+        for e in diagnostics
+        if e["stage1_anomaly"]
+    ]
+
+    stage2_action_windows = [
+        {
+            "window_index": e["window_index"],
+            "start_time_seconds": e["start_time_seconds"],
+            "end_time_seconds": e["end_time_seconds"],
+            "action": e["stage2_predicted_action"],
+            "confidence": e["stage2_confidence"],
+            "attention": e["stage2_attention"],
+        }
+        for e in diagnostics
+        if e["stage2_ran"]
+    ]
+
+    summary = {
+        "stage1_anomalous_windows": stage1_anomalous_windows,
+        "stage2_action_windows": stage2_action_windows,
+        "window_duration_seconds": window_duration_seconds,
+        "note": (
+            "stage1_anomaly_probability/is_anomaly and stage2_predicted_action/"
+            "confidence are single WHOLE-VIDEO values repeated per window "
+            "(both models are whole-video MIL classifiers, not per-window "
+            "classifiers). Only *_attention is genuinely per-window."
+        ),
+    }
+
+    return diagnostics, summary
+
+
+def log_model_window_diagnostics(video_path, duration_seconds, diagnostics, summary):
+    """Diagnostic-only console log. Prints every Stage-1-anomalous window
+    (never silently truncated) and every Stage-2 action window, but does not
+    spam one line per normal window."""
+    print("=" * 50, flush=True)
+    print("MODEL WINDOW DIAGNOSTICS", flush=True)
+    print(f"Video: {os.path.basename(video_path)}", flush=True)
+    print(f"Duration: {duration_seconds:.2f}s", flush=True)
+    print("", flush=True)
+
+    s1_windows = summary["stage1_anomalous_windows"]
+    print(f"Stage 1 anomalous windows ({len(s1_windows)}):", flush=True)
+    for w in s1_windows:
+        print(
+            f"  window {w['window_index']:>3d} | "
+            f"{w['start_time_seconds']:.2f}s -> {w['end_time_seconds']:.2f}s | "
+            f"probability={w['anomaly_probability']:.4f} | "
+            f"attention={w['attention']:.4f}",
+            flush=True,
+        )
+    if not s1_windows:
+        print("  (none)", flush=True)
+
+    print("", flush=True)
+    s2_windows = summary["stage2_action_windows"]
+    print(f"Stage 2 action windows ({len(s2_windows)}):", flush=True)
+    for w in s2_windows:
+        print(
+            f"  window {w['window_index']:>3d} | "
+            f"{w['start_time_seconds']:.2f}s -> {w['end_time_seconds']:.2f}s | "
+            f"action={w['action']} | "
+            f"confidence={w['confidence']:.4f} | "
+            f"attention={w['attention']:.4f}",
+            flush=True,
+        )
+    if not s2_windows:
+        print("  (none -- stage 2 did not run)", flush=True)
+    print("=" * 50, flush=True)
+
+
 @dataclass
 class InferenceOutput:
     """Plain dataclass (not a Pydantic schema) so this module stays
@@ -482,6 +618,13 @@ class InferenceOutput:
     # for stage2), mapped to real source-video timestamps. NOT a per-window
     # classification -- see build_temporal_evidence() docstring.
     temporal_evidence: dict | None = None
+    # DIAGNOSTIC-ONLY. See build_model_window_diagnostics() docstring: both
+    # fields are a read-only repackaging of values analyze() already
+    # computed above (anomaly_probability, is_anomaly, likely_action,
+    # action_confidence, stage1_attn, stage2_attn, window_starts). No new
+    # math, no new timestamp formula, no change to any existing field.
+    model_window_diagnostics: list = field(default_factory=list)
+    model_detection_summary: dict | None = None
 
 
 class InferencePipeline:
@@ -574,6 +717,19 @@ class InferencePipeline:
 
         temporal_evidence = build_temporal_evidence(window_starts, stage1_attn, stage2_attn)
 
+        model_window_diagnostics, model_detection_summary = build_model_window_diagnostics(
+            window_starts=window_starts,
+            stage1_attn=stage1_attn,
+            anomaly_probability=anomaly_probability,
+            is_anomaly=is_anomaly,
+            threshold=self.threshold,
+            stage2_attn=stage2_attn,
+            likely_action=likely_action,
+            action_confidence=action_confidence,
+        )
+        video_duration_seconds = total_native_frames / native_fps if native_fps else 0.0
+        log_model_window_diagnostics(video_path, video_duration_seconds, model_window_diagnostics, model_detection_summary)
+
         elapsed = time.time() - t0
 
         return InferenceOutput(
@@ -588,6 +744,8 @@ class InferencePipeline:
             feature_shape=tuple(i3d_features.shape),
             elapsed_seconds=elapsed,
             temporal_evidence=temporal_evidence,
+            model_window_diagnostics=model_window_diagnostics,
+            model_detection_summary=model_detection_summary,
         )
 
 

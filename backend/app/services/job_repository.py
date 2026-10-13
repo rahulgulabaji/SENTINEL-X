@@ -38,6 +38,15 @@ class JobRepository(ABC):
         updated record, or None if job_id is unknown."""
         ...
 
+    @abstractmethod
+    def list(self, *, limit: int = 50, before: str | None = None) -> list[AnalysisResult]:
+        """Most-recently-started jobs first. `before` is an ISO timestamp
+        cursor (started_at) for pagination -- returns only jobs strictly
+        older than it. Jobs with no started_at yet (freshly QUEUED) sort
+        first, matching "most recent" semantics for a job still being set
+        up."""
+        ...
+
 
 class InMemoryJobRepository(JobRepository):
     def __init__(self, results_dir: Path):
@@ -63,6 +72,21 @@ class InMemoryJobRepository(JobRepository):
             self._jobs[job_id] = updated
             self._persist(updated)
             return updated
+
+    def list(self, *, limit: int = 50, before: str | None = None) -> list[AnalysisResult]:
+        from datetime import datetime, timezone
+
+        with self._lock:
+            jobs = list(self._jobs.values())
+        # Jobs with no started_at yet (freshly QUEUED, not yet picked up by
+        # the executor) sort first -- treated as "now" rather than crashing
+        # on a None comparison or being pushed to the bottom as if ancient.
+        epoch_now = datetime.now(timezone.utc)
+        jobs.sort(key=lambda j: j.started_at or epoch_now, reverse=True)
+        if before:
+            cutoff = datetime.fromisoformat(before)
+            jobs = [j for j in jobs if j.started_at is not None and j.started_at < cutoff]
+        return jobs[:limit]
 
     def _persist(self, job: AnalysisResult) -> None:
         path = self._results_dir / f"{job.job_id}.json"

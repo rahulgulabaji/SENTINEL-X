@@ -33,6 +33,9 @@ backend/storage/evidence/*
 !backend/storage/results/.gitkeep
 !backend/storage/evidence/.gitkeep
 
+# === SMS gateway runtime config (contains the gateway password) ===
+backend/storage/sms_gateway_config.json
+
 # === Python ===
 __pycache__/
 *.pyc
@@ -52,3 +55,6 @@ node_modules/
 Thumbs.db
 .vscode/
 .idea/
+
+# === Local AI assistant session config (never tracked upstream) ===
+.claude/

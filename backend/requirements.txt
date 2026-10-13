@@ -25,3 +25,29 @@ pydantic==2.13.4
 # anomaly pipeline above). Pinned to the version actually installed and
 # verified in this environment -- not a blind add.
 ultralytics==8.4.137
+
+# Permanent persistence layer (MongoDB Atlas). Official driver only -- no
+# ODM. See app/core/mongodb.py.
+pymongo==4.18.2
+
+# Test runner, pinned (was previously installed-but-untracked in .venv).
+pytest==9.1.1
+
+# Test-only: in-process MongoDB emulation for app/repositories/* tests
+# (tests/test_mongodb.py and the updated tests/test_dispatch.py fixture) --
+# no real database server required to run the suite.
+mongomock==4.3.0
+
+# Responder PIN hashing (chat/duty-session auth). A plain SHA-256 hash of a
+# 6-digit PIN is brute-forceable offline in seconds (only 1,000,000
+# possibilities, no per-guess cost) -- Argon2id adds real, tunable
+# CPU/memory cost per guess. The one new auth-related dependency this
+# project has; everything else here stays stdlib-only by design.
+argon2-cffi==25.1.0
+
+# HTTP client for the xAI Grok chatbot integration. sms_gateway.py's
+# stdlib-urllib approach is fine for one fixed JSON POST, but the Grok
+# chat-completions API needs multi-turn message arrays + structured JSON
+# output -- httpx is the standard, well-maintained choice rather than
+# hand-rolling that on urllib for a non-latency-critical chatbot path.
+httpx==0.28.1
