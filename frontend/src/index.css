@@ -1,0 +1,133 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'IBM Plex Mono', 'JetBrains Mono', monospace;
+
+    /* Surface Tokens */
+    --color-surface-0: #0B0F13;
+    --color-surface-1: #12161B;
+    --color-surface-2: #181D24;
+    --color-surface-3: #222832;
+
+    /* Border Tokens */
+    --color-border: #262D36;
+    --color-border-strong: #39424E;
+
+    /* Text Tokens */
+    --color-text-primary: #E7EAED;
+    --color-text-secondary: #99A3AD;
+    --color-text-tertiary: #64707C;
+
+    /* Accent Tokens */
+    --color-accent: #4FA6D9;
+    --color-accent-dim: #2B5570;
+    --color-accent-blue: #3B82F6;
+    --color-accent-emerald: #10B981;
+    --color-accent-rose: #F43F5E;
+    --color-accent-amber: #F59E0B;
+
+    /* Severity Tokens */
+    --color-sev-critical: #E0453A;
+    --color-sev-high: #E08A3E;
+    --color-sev-moderate: #D9BD3F;
+    --color-sev-low: #4FA6D9;
+    --color-sev-clear: #49A87A;
+    --color-sev-offline: #64707C;
+
+    /* Graphite Tokens */
+    --color-graphite-950: #08090C;
+    --color-graphite-900: #0D0E13;
+    --color-graphite-850: #11131A;
+    --color-graphite-800: #151822;
+    --color-graphite-750: #1B1F2C;
+    --color-graphite-700: #232838;
+    --color-graphite-600: #2E354A;
+  }
+
+  html,
+  body,
+  #root {
+    margin: 0;
+    height: 100%;
+    min-height: 100vh;
+    background-color: #08090C;
+    color: #E2E8F0;
+    font-family: var(--font-sans);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+}
+
+.font-mono {
+  font-family: 'IBM Plex Mono', monospace;
+  font-feature-settings: "tnum" 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Minimalist technical scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: #0D0E13;
+}
+::-webkit-scrollbar-thumb {
+  background: #232838;
+  border-radius: 1px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3B82F6;
+}
+
+/* Technical grid background */
+.bg-tech-grid {
+  background-size: 32px 32px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+}
+
+/* Leaflet dark mode overrides */
+.leaflet-container {
+  background-color: #08090C !important;
+  font-family: 'IBM Plex Mono', monospace !important;
+  width: 100%;
+  height: 100%;
+}
+
+.leaflet-control-zoom a {
+  background-color: #151822 !important;
+  color: #E2E8F0 !important;
+  border-color: #232838 !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background-color: #232838 !important;
+  color: #3B82F6 !important;
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background-color: #0D0E13 !important;
+  color: #E2E8F0 !important;
+  border: 1px solid #232838 !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.8) !important;
+  border-radius: 2px !important;
+}
+
+.leaflet-popup-content {
+  font-family: 'IBM Plex Mono', monospace !important;
+  font-size: 11px !important;
+  line-height: 1.4 !important;
+  margin: 8px 12px !important;
+}
+
+.leaflet-tile {
+  image-rendering: -webkit-optimize-contrast;
+}
+

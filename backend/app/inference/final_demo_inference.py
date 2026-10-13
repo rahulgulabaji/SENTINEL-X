@@ -40,13 +40,21 @@ import torch.nn as nn
 # ---------------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-sys.path.insert(0, os.path.join(SCRIPT_DIR, "pytorch-i3d"))
+# REFACTOR NOTE: SCRIPT_DIR is added to sys.path (rather than using a relative
+# `from .pytorch_i3d import ...`) so this module keeps working both when run
+# directly as a CLI script (`python final_demo_inference.py video.mp4`, where
+# there is no enclosing package) and when imported as part of the `app`
+# package by the FastAPI backend.
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
 from pytorch_i3d import InceptionI3d  # noqa: E402
 
-I3D_WEIGHTS_PATH = os.path.join(SCRIPT_DIR, "pytorch-i3d", "models", "rgb_imagenet.pt")
-BINARY_MODEL_PATH = os.path.join(SCRIPT_DIR, "final_binary_detector_v1", "best_model.pt")
-CALIBRATION_PATH = os.path.join(SCRIPT_DIR, "final_binary_detector_v1", "threshold_calibration.json")
-ACTION_V2_MODEL_PATH = os.path.join(SCRIPT_DIR, "action_classifier_v2", "best_model.pt")
+MODELS_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "..", "models"))
+I3D_WEIGHTS_PATH = os.path.join(MODELS_DIR, "i3d", "rgb_imagenet.pt")
+BINARY_MODEL_PATH = os.path.join(MODELS_DIR, "stage1_binary", "best_model.pt")
+CALIBRATION_PATH = os.path.join(MODELS_DIR, "stage1_binary", "threshold_calibration.json")
+ACTION_V2_MODEL_PATH = os.path.join(MODELS_DIR, "stage2_action", "best_model.pt")
 
 # ---------------------------------------------------------------------------
 # Preprocessing constants ("Strategy B" temporal sampling)
@@ -359,11 +367,403 @@ def run_action_classifier(action_model, i3d_features, device):
 
     logits = action_model(features_t, mask)
     probs = torch.softmax(logits, dim=1).squeeze(0).cpu().numpy()
-    return probs
+
+    # Recompute attention weights for temporal-evidence diagnostics (same
+    # workaround as run_binary_detector: forward() only returns logits, so
+    # run the same path manually to also recover TemporalAttention's
+    # per-window weights). This does NOT change the model's prediction --
+    # `probs` above is untouched and remains the authoritative whole-video
+    # result. These weights describe how much each window contributed to
+    # that single whole-video action embedding, not a per-window class.
+    B, N_max, feat_dim, temporal_dim = features_t.shape
+    x = features_t.view(B * N_max, feat_dim, temporal_dim)
+    window_embeddings = action_model.window_encoder(x)
+    window_embeddings = window_embeddings.view(B, N_max, ACT_WINDOW_EMB_DIM)
+    gru_output, _ = action_model.gru(window_embeddings)
+    _, attention_weights = action_model.attention_pool(gru_output, mask)
+    attn = attention_weights.squeeze(0).squeeze(-1).cpu().numpy()
+
+    return probs, attn
 
 
 # ===========================================================================
-# Main
+# InferencePipeline — reusable, framework-agnostic entry point
+# ===========================================================================
+#
+# REFACTOR NOTE (added when wrapping this script in a FastAPI backend):
+# The model-loading and per-video analysis logic that used to live inline in
+# main() has been extracted into InferencePipeline.load() / .analyze() below,
+# unchanged in order and content -- same calls, same arguments, same control
+# flow (sample frames -> build window starts -> extract I3D features -> run
+# binary detector -> conditionally run action classifier). No architecture,
+# preprocessing, threshold, or checkpoint-loading code was changed; this is
+# pure control-flow extraction so the pipeline can be called from a long-lived
+# process (an API server) instead of only from a one-shot CLI invocation.
+# main() below is kept as a thin CLI wrapper that builds a pipeline, calls
+# load() + analyze(), and prints the same report as before.
+# ===========================================================================
+
+from dataclasses import dataclass, field
+
+
+def build_temporal_evidence(window_starts, stage1_attn, stage2_attn):
+    """Builds the temporal-evidence structure from REAL attention weights
+    already produced by the existing whole-video attention-pooling modules
+    (GatedAttentionMIL for stage1, TemporalAttention for stage2).
+
+    IMPORTANT: this is NOT per-window classification. Both models were
+    trained end-to-end as whole-video sequence classifiers; the single
+    `anomaly_probability` / `likely_action` / `action_confidence` produced
+    elsewhere remain the only authoritative results. These per-window
+    weights only describe how much each window's embedding contributed to
+    that one whole-video result (softmax-normalized attention over windows,
+    sums to ~1.0 per stage) -- useful as "where did the model look", not
+    "what did the model decide about this window".
+
+    stage2_attn is None whenever stage2 did not run (video judged not
+    anomalous) -- its per-window fields are then left as None, never
+    fabricated.
+    """
+    n_windows = len(window_starts)
+    window_duration_seconds = WINDOW_FRAMES / FPS_SAMPLE
+
+    if n_windows == 0 or stage1_attn is None:
+        return {"available": False, "window_duration_seconds": window_duration_seconds, "windows": []}
+
+    stage1_max = float(stage1_attn.max()) if len(stage1_attn) > 0 else 0.0
+    stage2_max = float(stage2_attn.max()) if stage2_attn is not None and len(stage2_attn) > 0 else 0.0
+
+    windows = []
+    for i, start_idx in enumerate(window_starts):
+        start_time_seconds = float(start_idx) / FPS_SAMPLE
+        end_time_seconds = float(start_idx + WINDOW_FRAMES) / FPS_SAMPLE
+
+        stage1_weight = float(stage1_attn[i])
+        stage1_norm = (stage1_weight / stage1_max) if stage1_max > 0 else 0.0
+
+        stage2_weight = float(stage2_attn[i]) if stage2_attn is not None else None
+        stage2_norm = (float(stage2_attn[i]) / stage2_max) if (stage2_attn is not None and stage2_max > 0) else None
+
+        windows.append({
+            "window_index": i,
+            "start_time_seconds": start_time_seconds,
+            "end_time_seconds": end_time_seconds,
+            "stage1_attention": stage1_weight,
+            "stage1_attention_normalized": stage1_norm,
+            "stage2_attention": stage2_weight,
+            "stage2_attention_normalized": stage2_norm,
+        })
+
+    return {
+        "available": True,
+        "window_duration_seconds": window_duration_seconds,
+        "windows": windows,
+    }
+
+
+def build_model_window_diagnostics(
+    window_starts,
+    stage1_attn,
+    anomaly_probability,
+    is_anomaly,
+    threshold,
+    stage2_attn,
+    likely_action,
+    action_confidence,
+):
+    """DIAGNOSTIC-ONLY, read-only view over values the pipeline already
+    computed -- no new timestamp formula, no recomputation of any model
+    output, no change to is_anomaly/threshold/action semantics.
+
+    IMPORTANT (per-window honesty note): final_binary_detector_v1 and
+    action_classifier_v2 are both whole-video MIL classifiers. Neither model
+    produces a genuine *per-window* anomaly probability or a genuine
+    *per-window* predicted action -- there is only ONE anomaly_probability
+    and (when stage2 runs) ONE likely_action/action_confidence for the
+    entire video. Those single whole-video values are repeated on every
+    window entry below so each row is self-contained for debugging, but
+    they are NOT independent per-window decisions. The only genuinely
+    per-window signal the models produce is attention (stage1_attention /
+    stage2_attention) -- i.e. how much each window's embedding contributed
+    to that one whole-video result. `stage1_anomaly` reuses the existing
+    whole-video is_anomaly flag (same threshold comparison already made in
+    analyze()) rather than inventing a new per-window threshold rule.
+    """
+    window_duration_seconds = WINDOW_FRAMES / FPS_SAMPLE
+    diagnostics = []
+
+    for i, start_idx in enumerate(window_starts):
+        start_time_seconds = float(start_idx) / FPS_SAMPLE
+        end_time_seconds = float(start_idx + WINDOW_FRAMES) / FPS_SAMPLE
+
+        stage2_ran = stage2_attn is not None
+        entry = {
+            "window_index": i,
+            "start_time_seconds": start_time_seconds,
+            "end_time_seconds": end_time_seconds,
+
+            # Whole-video values (existing, unmodified) -- repeated per row.
+            "stage1_anomaly_probability": float(anomaly_probability),
+            "stage1_anomaly": bool(is_anomaly),
+            "stage1_attention": float(stage1_attn[i]) if stage1_attn is not None else None,
+
+            "stage2_ran": stage2_ran,
+            "stage2_predicted_action": likely_action if stage2_ran else None,
+            "stage2_confidence": float(action_confidence) if (stage2_ran and action_confidence is not None) else None,
+            "stage2_attention": float(stage2_attn[i]) if stage2_ran else None,
+        }
+        s1 = entry["stage1_attention"] or 0.0
+        s2 = entry["stage2_attention"] or 0.0
+        entry["combined_attention"] = float(s1 + s2)
+        diagnostics.append(entry)
+
+    stage1_anomalous_windows = [
+        {
+            "window_index": e["window_index"],
+            "start_time_seconds": e["start_time_seconds"],
+            "end_time_seconds": e["end_time_seconds"],
+            "anomaly_probability": e["stage1_anomaly_probability"],
+            "attention": e["stage1_attention"],
+        }
+        for e in diagnostics
+        if e["stage1_anomaly"]
+    ]
+
+    stage2_action_windows = [
+        {
+            "window_index": e["window_index"],
+            "start_time_seconds": e["start_time_seconds"],
+            "end_time_seconds": e["end_time_seconds"],
+            "action": e["stage2_predicted_action"],
+            "confidence": e["stage2_confidence"],
+            "attention": e["stage2_attention"],
+        }
+        for e in diagnostics
+        if e["stage2_ran"]
+    ]
+
+    summary = {
+        "stage1_anomalous_windows": stage1_anomalous_windows,
+        "stage2_action_windows": stage2_action_windows,
+        "window_duration_seconds": window_duration_seconds,
+        "note": (
+            "stage1_anomaly_probability/is_anomaly and stage2_predicted_action/"
+            "confidence are single WHOLE-VIDEO values repeated per window "
+            "(both models are whole-video MIL classifiers, not per-window "
+            "classifiers). Only *_attention is genuinely per-window."
+        ),
+    }
+
+    return diagnostics, summary
+
+
+def log_model_window_diagnostics(video_path, duration_seconds, diagnostics, summary):
+    """Diagnostic-only console log. Prints every Stage-1-anomalous window
+    (never silently truncated) and every Stage-2 action window, but does not
+    spam one line per normal window."""
+    print("=" * 50, flush=True)
+    print("MODEL WINDOW DIAGNOSTICS", flush=True)
+    print(f"Video: {os.path.basename(video_path)}", flush=True)
+    print(f"Duration: {duration_seconds:.2f}s", flush=True)
+    print("", flush=True)
+
+    s1_windows = summary["stage1_anomalous_windows"]
+    print(f"Stage 1 anomalous windows ({len(s1_windows)}):", flush=True)
+    for w in s1_windows:
+        print(
+            f"  window {w['window_index']:>3d} | "
+            f"{w['start_time_seconds']:.2f}s -> {w['end_time_seconds']:.2f}s | "
+            f"probability={w['anomaly_probability']:.4f} | "
+            f"attention={w['attention']:.4f}",
+            flush=True,
+        )
+    if not s1_windows:
+        print("  (none)", flush=True)
+
+    print("", flush=True)
+    s2_windows = summary["stage2_action_windows"]
+    print(f"Stage 2 action windows ({len(s2_windows)}):", flush=True)
+    for w in s2_windows:
+        print(
+            f"  window {w['window_index']:>3d} | "
+            f"{w['start_time_seconds']:.2f}s -> {w['end_time_seconds']:.2f}s | "
+            f"action={w['action']} | "
+            f"confidence={w['confidence']:.4f} | "
+            f"attention={w['attention']:.4f}",
+            flush=True,
+        )
+    if not s2_windows:
+        print("  (none -- stage 2 did not run)", flush=True)
+    print("=" * 50, flush=True)
+
+
+@dataclass
+class InferenceOutput:
+    """Plain dataclass (not a Pydantic schema) so this module stays
+    framework-agnostic -- the API layer is responsible for converting this
+    into whatever response schema it needs."""
+
+    anomaly_probability: float
+    is_anomaly: bool
+    attention_sum: float
+    likely_action: str | None
+    action_confidence: float | None
+    action_candidates: list[tuple[str, float]] = field(default_factory=list)
+    n_sampled_frames: int = 0
+    n_windows: int = 0
+    feature_shape: tuple[int, ...] = ()
+    elapsed_seconds: float = 0.0
+    # Real per-window attention weights from the two existing whole-video
+    # attention-pooling modules (GatedAttentionMIL for stage1, TemporalAttention
+    # for stage2), mapped to real source-video timestamps. NOT a per-window
+    # classification -- see build_temporal_evidence() docstring.
+    temporal_evidence: dict | None = None
+    # DIAGNOSTIC-ONLY. See build_model_window_diagnostics() docstring: both
+    # fields are a read-only repackaging of values analyze() already
+    # computed above (anomaly_probability, is_anomaly, likely_action,
+    # action_confidence, stage1_attn, stage2_attn, window_starts). No new
+    # math, no new timestamp formula, no change to any existing field.
+    model_window_diagnostics: list = field(default_factory=list)
+    model_detection_summary: dict | None = None
+
+
+class InferencePipeline:
+    """Loads the I3D backbone + both locked checkpoints once, then runs the
+    full two-stage pipeline against a video on demand via analyze().
+
+    Constructing this object does nothing but set attributes to None -- no
+    file I/O, no GPU/CPU memory use happens until load() is called. This lets
+    a module-level singleton be created at import time safely, with load()
+    deferred to an explicit startup hook (FastAPI's lifespan).
+    """
+
+    def __init__(self):
+        self.device: torch.device | None = None
+        self.i3d_model: InceptionI3d | None = None
+        self.mil_model: MILClassifier | None = None
+        self.action_model: ActionClassifierV2 | None = None
+        self.threshold: float = DEFAULT_THRESHOLD
+        self.is_loaded: bool = False
+
+    def load(self) -> None:
+        """Loads all 3 checkpoints onto self.device. Safe to call once;
+        calling again would reload from disk, so callers (the lifespan hook)
+        should only call this a single time at startup."""
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.threshold = DEFAULT_THRESHOLD
+        if os.path.isfile(CALIBRATION_PATH):
+            with open(CALIBRATION_PATH) as f:
+                calib = json.load(f)
+            self.threshold = float(calib.get("selected_threshold", DEFAULT_THRESHOLD))
+
+        i3d_model = InceptionI3d(400, in_channels=3)
+        i3d_model.load_state_dict(torch.load(I3D_WEIGHTS_PATH, map_location="cpu"))
+        i3d_model.to(self.device)
+        i3d_model.eval()
+        self.i3d_model = i3d_model
+
+        assert os.path.isfile(BINARY_MODEL_PATH), f"Checkpoint not found: {BINARY_MODEL_PATH}"
+        mil_model = MILClassifier(num_classes=BIN_NUM_CLASSES).to(self.device)
+        mil_state_dict = torch.load(BINARY_MODEL_PATH, map_location=self.device, weights_only=True)
+        mil_model.load_state_dict(mil_state_dict)
+        mil_model.eval()
+        self.mil_model = mil_model
+
+        assert os.path.isfile(ACTION_V2_MODEL_PATH), f"Checkpoint not found: {ACTION_V2_MODEL_PATH}"
+        action_model = ActionClassifierV2(num_classes=ACT_NUM_CLASSES).to(self.device)
+        action_state_dict = torch.load(ACTION_V2_MODEL_PATH, map_location=self.device, weights_only=True)
+        action_model.load_state_dict(action_state_dict)
+        action_model.eval()
+        self.action_model = action_model
+
+        self.is_loaded = True
+
+    def analyze(self, video_path: str) -> InferenceOutput:
+        """Runs the full pipeline against one video. Raises if load() has not
+        been called yet, or if the video can't be opened/sampled."""
+        if not self.is_loaded:
+            raise RuntimeError("InferencePipeline.analyze() called before load()")
+
+        t0 = time.time()
+
+        frames, native_fps, total_native_frames = sample_video_frames_sequential(video_path)
+        n_sampled = len(frames)
+        if n_sampled == 0:
+            raise RuntimeError("No frames could be sampled from this video.")
+
+        window_starts = build_window_starts(n_sampled)
+        n_windows = len(window_starts)
+
+        i3d_features = extract_i3d_features(self.i3d_model, frames, window_starts, self.device)
+
+        anomaly_probability, stage1_attn = run_binary_detector(self.mil_model, i3d_features, self.device)
+        attn_sum = float(stage1_attn.sum())
+        is_anomaly = anomaly_probability >= self.threshold
+
+        likely_action = None
+        action_confidence = None
+        action_candidates: list[tuple[str, float]] = []
+        stage2_attn = None
+        if is_anomaly:
+            action_probs, stage2_attn = run_action_classifier(self.action_model, i3d_features, self.device)
+            pred_idx = int(np.argmax(action_probs))
+            likely_action = ACTION_CLASSES[pred_idx]
+            action_confidence = float(action_probs[pred_idx])
+            action_candidates = [
+                (ACTION_CLASSES[i], float(p)) for i, p in enumerate(action_probs)
+            ]
+            action_candidates.sort(key=lambda pair: pair[1], reverse=True)
+
+        temporal_evidence = build_temporal_evidence(window_starts, stage1_attn, stage2_attn)
+
+        model_window_diagnostics, model_detection_summary = build_model_window_diagnostics(
+            window_starts=window_starts,
+            stage1_attn=stage1_attn,
+            anomaly_probability=anomaly_probability,
+            is_anomaly=is_anomaly,
+            threshold=self.threshold,
+            stage2_attn=stage2_attn,
+            likely_action=likely_action,
+            action_confidence=action_confidence,
+        )
+        video_duration_seconds = total_native_frames / native_fps if native_fps else 0.0
+        log_model_window_diagnostics(video_path, video_duration_seconds, model_window_diagnostics, model_detection_summary)
+
+        elapsed = time.time() - t0
+
+        return InferenceOutput(
+            anomaly_probability=anomaly_probability,
+            is_anomaly=is_anomaly,
+            attention_sum=attn_sum,
+            likely_action=likely_action,
+            action_confidence=action_confidence,
+            action_candidates=action_candidates,
+            n_sampled_frames=n_sampled,
+            n_windows=n_windows,
+            feature_shape=tuple(i3d_features.shape),
+            elapsed_seconds=elapsed,
+            temporal_evidence=temporal_evidence,
+            model_window_diagnostics=model_window_diagnostics,
+            model_detection_summary=model_detection_summary,
+        )
+
+
+_pipeline: InferencePipeline | None = None
+
+
+def get_pipeline() -> InferencePipeline:
+    """Module-level singleton accessor used by the service layer. The
+    instance is created on first access (empty, unloaded) and load() is
+    expected to be called exactly once by the FastAPI lifespan hook."""
+    global _pipeline
+    if _pipeline is None:
+        _pipeline = InferencePipeline()
+    return _pipeline
+
+
+# ===========================================================================
+# Main (CLI entrypoint -- unchanged behavior, now backed by InferencePipeline)
 # ===========================================================================
 
 def main():
@@ -378,62 +778,13 @@ def main():
         print(f"ERROR: video file not found: {video_path}", flush=True)
         sys.exit(1)
 
-    # Decision threshold: from threshold_calibration.json if present, else 0.50
-    threshold = DEFAULT_THRESHOLD
-    if os.path.isfile(CALIBRATION_PATH):
-        with open(CALIBRATION_PATH) as f:
-            calib = json.load(f)
-        threshold = float(calib.get("selected_threshold", DEFAULT_THRESHOLD))
+    pipeline = InferencePipeline()
+    pipeline.load()
+    output = pipeline.analyze(video_path)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    result = "ANOMALY" if output.is_anomaly else "NORMAL"
 
-    t0 = time.time()
-
-    # --- Load models (strictly read-only; checkpoints are never modified) ---
-    i3d_model = InceptionI3d(400, in_channels=3)
-    i3d_model.load_state_dict(torch.load(I3D_WEIGHTS_PATH, map_location="cpu"))
-    i3d_model.to(device)
-    i3d_model.eval()
-
-    assert os.path.isfile(BINARY_MODEL_PATH), f"Checkpoint not found: {BINARY_MODEL_PATH}"
-    mil_model = MILClassifier(num_classes=BIN_NUM_CLASSES).to(device)
-    mil_state_dict = torch.load(BINARY_MODEL_PATH, map_location=device, weights_only=True)
-    mil_model.load_state_dict(mil_state_dict)
-    mil_model.eval()
-
-    assert os.path.isfile(ACTION_V2_MODEL_PATH), f"Checkpoint not found: {ACTION_V2_MODEL_PATH}"
-    action_model = ActionClassifierV2(num_classes=ACT_NUM_CLASSES).to(device)
-    action_state_dict = torch.load(ACTION_V2_MODEL_PATH, map_location=device, weights_only=True)
-    action_model.load_state_dict(action_state_dict)
-    action_model.eval()
-
-    # --- Preprocessing ---
-    frames, native_fps, total_native_frames = sample_video_frames_sequential(video_path)
-    n_sampled = len(frames)
-
-    if n_sampled == 0:
-        print("ERROR: no frames could be sampled from this video.", flush=True)
-        sys.exit(1)
-
-    window_starts = build_window_starts(n_sampled)
-    n_windows = len(window_starts)
-
-    # --- I3D feature extraction (shared by both models) ---
-    i3d_features = extract_i3d_features(i3d_model, frames, window_starts, device)
-
-    # --- Binary detector (single joint MIL forward pass) ---
-    anomaly_probability, attn = run_binary_detector(mil_model, i3d_features, device)
-    attn_sum = float(attn.sum())
-    result = "ANOMALY" if anomaly_probability >= threshold else "NORMAL"
-
-    # --- Action classifier (only if ANOMALY; reuses the same feature tensor) ---
-    action_probs = None
-    if result == "ANOMALY":
-        action_probs = run_action_classifier(action_model, i3d_features, device)
-
-    elapsed = time.time() - t0
-
-    # --- Report ---
+    # --- Report (same format as before the refactor) ---
     print("=" * 60, flush=True)
     print("VIDEO ANALYSIS", flush=True)
     print("=" * 60, flush=True)
@@ -441,32 +792,26 @@ def main():
     print(f"Expected class (if supplied): {expected_class if expected_class else 'N/A'}", flush=True)
     print("", flush=True)
     print(f"Result: {result}", flush=True)
-    print(f"Anomaly probability: {anomaly_probability * 100:.2f}%", flush=True)
+    print(f"Anomaly probability: {output.anomaly_probability * 100:.2f}%", flush=True)
     print("", flush=True)
 
-    if result == "ANOMALY":
-        pred_idx = int(np.argmax(action_probs))
-        pred_class = ACTION_CLASSES[pred_idx]
-        pred_conf = float(action_probs[pred_idx])
-
-        top3_idx = np.argsort(action_probs)[::-1][:3]
-
-        print(f"Likely action: {pred_class.upper()}", flush=True)
-        print(f"Action confidence: {pred_conf * 100:.2f}%", flush=True)
+    if output.is_anomaly:
+        print(f"Likely action: {output.likely_action.upper()}", flush=True)
+        print(f"Action confidence: {output.action_confidence * 100:.2f}%", flush=True)
         print("", flush=True)
         print("Top predictions:", flush=True)
-        for rank, idx in enumerate(top3_idx, start=1):
-            print(f"{rank}. {ACTION_CLASSES[idx]:<14s} {float(action_probs[idx]) * 100:.2f}%", flush=True)
+        for rank, (class_name, prob) in enumerate(output.action_candidates[:3], start=1):
+            print(f"{rank}. {class_name:<14s} {prob * 100:.2f}%", flush=True)
     else:
         print("Action classifier: SKIPPED", flush=True)
 
     print("", flush=True)
     print("-" * 60, flush=True)
-    print(f"Sampled frames: {n_sampled}", flush=True)
-    print(f"Temporal windows: {n_windows}", flush=True)
-    print(f"I3D feature shape: {tuple(i3d_features.shape)}", flush=True)
-    print(f"Binary attention sum (sanity check, should be ~1.0): {attn_sum:.6f}", flush=True)
-    print(f"Processing time: {elapsed:.2f} sec", flush=True)
+    print(f"Sampled frames: {output.n_sampled_frames}", flush=True)
+    print(f"Temporal windows: {output.n_windows}", flush=True)
+    print(f"I3D feature shape: {output.feature_shape}", flush=True)
+    print(f"Binary attention sum (sanity check, should be ~1.0): {output.attention_sum:.6f}", flush=True)
+    print(f"Processing time: {output.elapsed_seconds:.2f} sec", flush=True)
     print("=" * 60, flush=True)
 
 
